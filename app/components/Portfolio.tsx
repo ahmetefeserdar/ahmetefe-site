@@ -1,11 +1,13 @@
 "use client";
 
 import Image from "next/image";
-import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import frameLoader from "../frame-loader";
 import SensorField from "./SensorField";
 import CityPreview from "./CityPreview";
 import MergeEnergy from "./MergeEnergy";
+import GearDisplay from "./GearDisplay";
 
 type Photo = {
   id: number;
@@ -79,7 +81,7 @@ const photos: Photo[] = [
     ...photo,
     id: index + 1,
     src: photo.src.replace("/photography/", "/frames/"),
-    fullSrc: `/frames/full/${String(photo.id).padStart(2, "0")}.jpg`,
+    fullSrc: `/frames/view/${String(photo.id).padStart(2, "0")}.webp`,
   }));
 
 const monthNumber = (date: string) => {
@@ -212,6 +214,32 @@ function OrganizationLogo({ id }: { id: string }) {
   return <span className={`organization-logo organization-${organization}`}><Image src={`/organizations/${organization}.${extension}`} alt="" width={organization === "eth" ? 120 : 40} height={organization === "eth" ? 20 : 40} unoptimized /></span>;
 }
 
+// WCAG relative luminance of an hsl() colour, so the palette can be checked
+// against the paper before it reaches the page.
+function hslLuminance(hue: number, saturation: number, lightness: number) {
+  const chroma = (saturation / 100) * Math.min(lightness / 100, 1 - lightness / 100);
+  const channel = (offset: number) => {
+    const k = (offset + hue / 30) % 12;
+    const value = lightness / 100 - chroma * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(0) + 0.7152 * channel(8) + 0.0722 * channel(4);
+}
+
+// The lightest — so the most vivid — lightness that still clears `target`
+// against the paper. Amber and Forest at full brightness reach barely 1.5:1
+// unaided, which is why the accent is graded rather than used raw for text.
+function readableLightness(hue: number, saturation: number, paperLuminance: number, target: number) {
+  let low = 0;
+  let high = 100;
+  for (let step = 0; step < 18; step += 1) {
+    const mid = (low + high) / 2;
+    if ((paperLuminance + 0.05) / (hslLuminance(hue, saturation, mid) + 0.05) >= target) low = mid;
+    else high = mid;
+  }
+  return Math.floor(low);
+}
+
 function Arrow({ diagonal = false }: { diagonal?: boolean }) {
   return <span aria-hidden="true">{diagonal ? "↗" : "→"}</span>;
 }
@@ -243,14 +271,14 @@ function ColorLab({
     { name: "Rose", hue: 338, chroma: 64 },
   ];
   return (
-    <aside className="color-lab" aria-label="Interactive color laboratory">
-      <div className="lab-head">
+    <details className="color-lab" open aria-label="Interactive color laboratory">
+      <summary className="lab-head">
         <div>
           <p className="eyebrow">Grade this page</p>
           <p className="lab-status"><i /> Make it feel like you</p>
         </div>
         <span className="live-swatch" aria-hidden="true" />
-      </div>
+      </summary>
 
       <div className="gamut-switch color-mode-switch" aria-label="Site color character">
         {(["Simple", "P3", "sRGB"] as const).map((item) => (
@@ -287,19 +315,28 @@ function ColorLab({
       </div>}
 
       <p className="lab-readout">{mode === "Simple" ? "Your palette, across the page. Photos stay original." : <>H {hue}° · C {chroma} · {light > 58 ? "+" : ""}{((light - 58) / 10).toFixed(1)} EV</>}</p>
-    </aside>
+    </details>
   );
 }
 
-function Lightbox({ photo, onClose }: { photo: Photo; onClose: () => void }) {
+function Lightbox({ photo, neighbours, onClose, onNavigate, position, total }: { photo: Photo; neighbours: string[]; onClose: () => void; onNavigate: (direction: number) => void; position: number; total: number }) {
   const closeRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const touchStart = useRef<{x:number;y:number} | null>(null);
   useEffect(() => {
     const previousFocus = document.activeElement as HTMLElement | null;
     const previousOverflow = document.body.style.overflow;
     closeRef.current?.focus();
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
-      if (event.key === "Tab") { event.preventDefault(); closeRef.current?.focus(); }
+      if (event.key === "ArrowRight") { event.preventDefault(); onNavigate(1); }
+      if (event.key === "ArrowLeft") { event.preventDefault(); onNavigate(-1); }
+      if (event.key === "Tab") {
+        const controls = Array.from(dialogRef.current?.querySelectorAll<HTMLButtonElement>("button") ?? []);
+        const index = controls.indexOf(document.activeElement as HTMLButtonElement);
+        event.preventDefault();
+        controls[(index + (event.shiftKey ? -1 : 1) + controls.length) % controls.length]?.focus();
+      }
     }
     document.addEventListener("keydown", onKeyDown);
     document.body.style.overflow = "hidden";
@@ -308,21 +345,23 @@ function Lightbox({ photo, onClose }: { photo: Photo; onClose: () => void }) {
       document.body.style.overflow = previousOverflow;
       previousFocus?.focus();
     };
-  }, [onClose]);
+  }, [onClose, onNavigate]);
 
   return (
-    <div className="lightbox" role="dialog" aria-modal="true" aria-label={`Photograph ${photo.id}`} onClick={onClose}>
+    <div ref={dialogRef} className="lightbox" role="dialog" aria-modal="true" aria-label={`Photograph ${position} of ${total}`} onClick={onClose}>
       <button ref={closeRef} type="button" onClick={onClose} aria-label="Close photograph">Close ×</button>
       <div className="lightbox-frame" onClick={(event) => event.stopPropagation()}>
-        <div className="lightbox-image" onContextMenu={(event) => event.preventDefault()}>
+        <div className="lightbox-image" onTouchStart={event => { touchStart.current = {x:event.touches[0].clientX,y:event.touches[0].clientY}; }} onTouchEnd={event => { const start=touchStart.current; touchStart.current=null; if (!start) return; const dx=event.changedTouches[0].clientX-start.x,dy=event.changedTouches[0].clientY-start.y; if(Math.abs(dx)>60 && Math.abs(dx)>Math.abs(dy)*1.5) onNavigate(dx<0?1:-1); }} onContextMenu={(event) => event.preventDefault()}>
           <div className="lightbox-media" style={{ "--media-ratio": photo.width / photo.height } as CSSProperties}>
             <Image src={photo.fullSrc ?? photo.src} alt={photo.alt} width={photo.width} height={photo.height} sizes="75vw" loading="eager" unoptimized draggable={false} />
+            {neighbours.map(neighbour => <link key={neighbour} rel="preload" as="image" href={neighbour} />)}
             <span className="photo-watermark">© Ahmet Efe Serdar</span>
             <span className="image-shield" aria-hidden="true" />
           </div>
         </div>
         <div className="lightbox-caption">
-          <p><span>Frame {String(photo.id).padStart(2, "0")} / {photos.length}</span>{photo.alt}</p>
+          <div className="lightbox-navigation"><button type="button" onClick={()=>onNavigate(-1)} aria-label="Previous photograph">←</button><span aria-live="polite">{position} / {total}</span><button type="button" onClick={()=>onNavigate(1)} aria-label="Next photograph">→</button></div>
+          <p><span>Frame {String(photo.id).padStart(2, "0")}</span>{photo.alt}</p>
           <dl>
             <div><dt>Place</dt><dd>{photo.location}</dd></div>
             <div><dt>Lens</dt><dd>{photo.focalLength}</dd></div>
@@ -339,6 +378,14 @@ function Lightbox({ photo, onClose }: { photo: Photo; onClose: () => void }) {
 }
 
 export default function Portfolio() {
+  // The blocking script in the layout stamps data-theme before the first paint,
+  // so the button reads the document instead of holding its own copy of the
+  // theme: no wrong icon on the first frame, and nothing to re-sync on hydration.
+  const toggleTheme = () => {
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("portfolio-theme", next); } catch {}
+  };
   const [hue, setHue] = useState(12);
   const [chroma, setChroma] = useState(88);
   const [light, setLight] = useState(58);
@@ -348,55 +395,155 @@ export default function Portfolio() {
   const [photoCollection, setPhotoCollection] = useState("All frames");
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [activeJourney, setActiveJourney] = useState("midas");
+  const [activeSection, setActiveSection] = useState("profile");
+  const [activeSub, setActiveSub] = useState("portfolio");
+  const navRef = useRef<HTMLElement>(null);
+  const [marker, setMarker] = useState<{ left: number; top: number; width: number } | null>(null);
+  const [showAllPhotos, setShowAllPhotos] = useState(false);
+  const closeLightbox = useCallback(() => setSelectedPhoto(null), []);
+  useEffect(() => {
+    const sections = Array.from(document.querySelectorAll<HTMLElement>("main > section[id]"));
+    const subsections = Array.from(document.querySelectorAll<HTMLElement>("#portfolio, #gear"));
+    let frame = 0;
+    const update = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        const offset = (document.querySelector(".topbar")?.getBoundingClientRect().height ?? 72) + 70;
+        const passed = (element: HTMLElement) => element.getBoundingClientRect().top <= offset;
+        // The final section never reaches the detection line, so the end of the
+        // page counts as arriving at it.
+        const grounded = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+        setActiveSection((grounded ? sections.at(-1) : sections.filter(passed).at(-1))?.id ?? "profile");
+        setActiveSub(subsections.filter(passed).at(-1)?.id ?? "portfolio");
+      });
+    };
+    update(); window.addEventListener("scroll", update, {passive:true});
+    return () => { window.removeEventListener("scroll", update); cancelAnimationFrame(frame); };
+  }, []);
+
+  // One indicator slides between the primary links rather than five separate
+  // dots blinking on and off, so the header reads as a single moving mark.
+  useEffect(() => {
+    const nav = navRef.current;
+    const current = nav?.querySelector<HTMLElement>("[data-primary][aria-current]");
+    if (!nav || !current) { setMarker(null); return; }
+    const measure = () => {
+      const link = current.getBoundingClientRect();
+      const frame = nav.getBoundingClientRect();
+      setMarker({ left: link.left - frame.left, top: link.bottom - frame.top, width: link.width });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    const fonts = document.fonts;
+    fonts?.ready.then(measure).catch(() => {});
+    return () => window.removeEventListener("resize", measure);
+  }, [activeSection]);
 
   const theme = useMemo(() => {
     const paperLight = Math.round(88 + (light - 42) * 0.27);
     const imageSaturation = (0.25 + chroma / 100 * (gamut === "P3" ? 1.25 : 0.72)).toFixed(2);
     const imageBrightness = (0.84 + (light - 42) * 0.012).toFixed(2);
     const accentChroma = Math.round(Math.max(18, chroma * (gamut === "P3" ? 1 : 0.62)));
+    const warm = temperature === "warm";
+    // Grade the accent down only as far as legibility needs: 3:1 behind display
+    // type, 4.5:1 behind running text. A palette that already passes is left alone.
+    const paperLuminance = hslLuminance(42, 24, paperLight);
+    const darkChroma = Math.max(28, accentChroma - 10);
+    const displayLight = Math.min(light, readableLightness(hue, accentChroma, paperLuminance, 3.05));
+    const textLight = Math.min(light, readableLightness(hue, accentChroma, paperLuminance, 4.6));
     return {
       "--live-hue": hue,
       "--live-chroma": `${Math.max(30, chroma)}%`,
       "--live-light": `${light}%`,
       "--accent": `hsl(${hue} ${accentChroma}% ${light}%)`,
       "--accent-soft": `hsl(${hue} ${Math.max(24, accentChroma - 24)}% ${Math.min(94, light + 27)}%)`,
-      "--accent-dark": `hsl(${hue} ${Math.max(28, accentChroma - 10)}% ${Math.max(16, light - 34)}%)`,
-      "--paper": `hsl(${temperature === "warm" ? 42 : 198} 24% ${paperLight}%)`,
-      "--ink": `hsl(${temperature === "warm" ? 55 : 202} 14% ${Math.max(7, 18 - (light - 42) * 0.23)}%)`,
+      "--accent-dark": `hsl(${hue} ${darkChroma}% ${Math.min(Math.max(16, light - 34), readableLightness(hue, darkChroma, paperLuminance, 4.6))}%)`,
+      "--accent-display": `hsl(${hue} ${accentChroma}% ${displayLight}%)`,
+      "--accent-text": `hsl(${hue} ${accentChroma}% ${textLight}%)`,
+      "--muted": `hsl(45 7% ${readableLightness(45, 7, paperLuminance, 4.6)}%)`,
+      "--paper": `hsl(${warm ? 42 : 198} 24% ${paperLight}%)`,
+      "--ink": `hsl(${warm ? 55 : 202} 14% ${Math.max(7, 18 - (light - 42) * 0.23)}%)`,
+      // Near-black leaves almost no room for chroma, so the dark theme is lifted
+      // a little and carries more saturation; the tint then also reaches the ink,
+      // the rules and every color-mix surface built on the paper.
+      "--night-paper": `hsl(${warm ? 26 : 210} ${warm ? 17 : 19}% ${(5 + (light - 58) * 0.08).toFixed(2)}%)`,
+      "--night-ink": `hsl(${warm ? 40 : 208} ${warm ? 24 : 20}% 93%)`,
+      "--night-muted": `hsl(${warm ? 36 : 214} ${warm ? 11 : 13}% 68%)`,
+      "--night-line": warm ? "hsl(34 40% 82% / .22)" : "hsl(206 40% 84% / .22)",
       "--photo-saturation": imageSaturation,
       "--photo-brightness": imageBrightness,
-      "--photo-warmth": temperature === "warm" ? "sepia(.08)" : "hue-rotate(8deg)",
+      "--photo-warmth": warm ? "sepia(.08)" : "hue-rotate(8deg)",
       "--gamut-force": gamut === "P3" ? "1" : ".76",
     } as CSSProperties;
   }, [hue, chroma, light, gamut, temperature]);
 
-  const visiblePhotos = photos.filter(photo => photoCollection === "All frames" || (photoCollection === "The Alps" ? photo.location.includes("Jungfrau") : photoCollection === "Istanbul" ? /Istanbul/.test(photo.location) : !/Jungfrau|Istanbul/.test(photo.location)));
+  const visiblePhotos = useMemo(() => photos.filter(photo => photoCollection === "All frames" || (photoCollection === "The Alps" ? photo.location.includes("Jungfrau") : photoCollection === "Istanbul" ? /Istanbul/.test(photo.location) : !/Jungfrau|Istanbul/.test(photo.location))), [photoCollection]);
+  const featuredFrames = [1, 4, 8, 12, 17, 22, 26, 30, 35, 40, 44, 48];
+  const displayedPhotos = showAllPhotos ? visiblePhotos : photoCollection === "All frames" ? visiblePhotos.filter(photo => featuredFrames.includes(photo.id)) : visiblePhotos.slice(0, 12);
+  const neighbouringFrames = useMemo(() => {
+    const index = visiblePhotos.findIndex(photo => photo.id === selectedPhoto?.id);
+    if (index < 0) return [];
+    return [1, -1].map(direction => visiblePhotos[(index + direction + visiblePhotos.length) % visiblePhotos.length])
+      .filter(photo => photo && photo.id !== selectedPhoto?.id)
+      .map(photo => photo.fullSrc ?? photo.src);
+  }, [visiblePhotos, selectedPhoto]);
+  const navigatePhoto = useCallback((direction: number) => setSelectedPhoto(current => {
+    const index = visiblePhotos.findIndex(photo => photo.id === current?.id);
+    return visiblePhotos[(index + direction + visiblePhotos.length) % visiblePhotos.length];
+  }), [visiblePhotos]);
 
   return (
     <div className={`site-shell gamut-${gamut.toLowerCase()}`} style={theme}>
       <a className="skip-link" href="#main-content">Skip to content</a>
       <header className="topbar">
         <a className="wordmark" href="#profile" aria-label="Ahmet Efe Serdar, home">
-          <Image className="wordmark-mark" src="/brand-mark-camera-illustrated.png" alt="" width={76} height={43} loading="eager" aria-hidden="true" />
+          <Image className="wordmark-mark" src="/brand-mark-camera-illustrated.png" alt="" width={76} height={43} loading="eager" unoptimized aria-hidden="true" />
           <span className="wordmark-name"><b>Ahmet Efe</b> <em>Serdar</em></span>
         </a>
-        <nav aria-label="Primary navigation">
-          <a href="#profile">Profile</a>
-          <a href="#journey">Journey</a>
-          <a href="#thesis">Thesis</a>
+        <nav aria-label="Primary navigation" ref={navRef}>
+          {marker && <span className="nav-marker" aria-hidden="true" style={{ "--marker-left": `${marker.left}px`, "--marker-top": `${marker.top}px`, "--marker-width": `${marker.width}px` } as CSSProperties} />}
+          {[["profile", "Profile"], ["journey", "Journey"], ["thesis", "Thesis"]].map(([id, label]) =>
+            <a key={id} href={`#${id}`} data-primary aria-current={activeSection === id ? "location" : undefined}>{label}</a>)}
           <div className="nav-group">
-            <a href="#photography">Photography <span aria-hidden="true">+</span></a>
+            <a href="#photography" data-primary aria-current={activeSection === "photography" ? "location" : undefined}>Photography</a>
             <div className="nav-submenu">
-              <a href="#gear">Gear</a>
-              <a href="#portfolio">Portfolio</a>
+              <a href="#portfolio" aria-current={activeSection === "photography" && activeSub === "portfolio" ? "location" : undefined}>Portfolio</a>
+              <a href="#gear" aria-current={activeSection === "photography" && activeSub === "gear" ? "location" : undefined}>Gear</a>
             </div>
           </div>
-          <a href="#contact">Contact</a>
+          <a href="#contact" data-primary aria-current={activeSection === "contact" ? "location" : undefined}>Contact</a>
         </nav>
-        <div className="header-contacts"><div className="social-links" aria-label="Social profiles">
+        <div className="header-contacts"><button className="kelvin-toggle" type="button" onClick={() => setTemperature(temperature === "warm" ? "cool" : "warm")} aria-label={`Page white balance is ${temperature === "warm" ? "3200 Kelvin, warm" : "5600 Kelvin, cool"}. Switch to ${temperature === "warm" ? "cool" : "warm"}.`} title={temperature === "warm" ? "Warm page · 3200K" : "Cool page · 5600K"}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><path d="M12 4a8 8 0 0 1 0 16Z" fill="currentColor" stroke="none" /></svg>
+          <span>{temperature === "warm" ? "3200K" : "5600K"}</span>
+        </button><button className="theme-toggle" type="button" onClick={toggleTheme} aria-label="Switch between light and dark mode" title="Switch theme">
+          <svg className="theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" /></svg>
+          <svg className="theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14A8.5 8.5 0 0 1 10 3.5 8.5 8.5 0 1 0 20.5 14Z" /></svg>
+        </button><div className="social-links" aria-label="Social profiles">
+          <div className="social-profile-menu" onKeyDown={event => { if (event.key === "Escape") { event.currentTarget.classList.add("dismissed"); } }} onMouseEnter={event => event.currentTarget.classList.remove("dismissed")} onFocus={event => event.currentTarget.classList.remove("dismissed")}>
           <a href="https://www.linkedin.com/in/ahmetefeserdar/" target="_blank" rel="noreferrer" aria-label="LinkedIn profile" title="LinkedIn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM3.5 9h3v12h-3V9ZM10 9h3v1.6c.8-1.2 1.9-1.9 3.5-1.9 3 0 4 1.9 4 5V21h-3v-6.4c0-1.8-.5-2.9-2-2.9-1.7 0-2.5 1.2-2.5 3V21h-3V9Z" /></svg></a>
+            <div className="social-profile-card compact-social-card">
+              <div className="social-card-identity"><span className="social-brand social-brand-linkedin"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM3.5 9h3v12h-3V9ZM10 9h3v1.6c.8-1.2 1.9-1.9 3.5-1.9 3 0 4 1.9 4 5V21h-3v-6.4c0-1.8-.5-2.9-2-2.9-1.7 0-2.5 1.2-2.5 3V21h-3V9Z" /></svg></span><div><span className="social-card-network">LinkedIn</span><strong>ahmetefeserdar</strong></div></div>
+              <a href="https://www.linkedin.com/in/ahmetefeserdar/" target="_blank" rel="noreferrer">View profile <span aria-hidden="true">↗</span></a>
+            </div>
+          </div>
+          <div className="social-profile-menu" onKeyDown={event => { if (event.key === "Escape") { event.currentTarget.classList.add("dismissed"); } }} onMouseEnter={event => event.currentTarget.classList.remove("dismissed")} onFocus={event => event.currentTarget.classList.remove("dismissed")}>
           <a href="https://github.com/ahmetefeserdar" target="_blank" rel="noreferrer" aria-label="GitHub profile" title="GitHub"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.86c-2.78.6-3.37-1.18-3.37-1.18-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.64-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.03A9.6 9.6 0 0 1 12 6.83c.85 0 1.71.11 2.51.34 1.91-1.3 2.75-1.03 2.75-1.03.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.69-4.57 4.94.36.31.68.92.68 1.85v2.75c0 .27.18.58.69.48A10 10 0 0 0 12 2Z" /></svg></a>
-          <a href="mailto:aserdar@ethz.ch" aria-label="Email Ahmet Efe" title="Email"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 6 9 7 9-7" /></svg></a>
+            <div className="social-profile-card compact-social-card">
+              <div className="social-card-identity"><span className="social-brand social-brand-github"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.86c-2.78.6-3.37-1.18-3.37-1.18-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.64-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.03A9.6 9.6 0 0 1 12 6.83c.85 0 1.71.11 2.51.34 1.91-1.3 2.75-1.03 2.75-1.03.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.69-4.57 4.94.36.31.68.92.68 1.85v2.75c0 .27.18.58.69.48A10 10 0 0 0 12 2Z" /></svg></span><div><span className="social-card-network">GitHub</span><strong>ahmetefeserdar</strong></div></div>
+              <a href="https://github.com/ahmetefeserdar" target="_blank" rel="noreferrer">View profile <span aria-hidden="true">↗</span></a>
+            </div>
+          </div>
+          <div className="social-profile-menu email-menu" onKeyDown={event => { if (event.key === "Escape") event.currentTarget.classList.add("dismissed"); }} onMouseEnter={event => event.currentTarget.classList.remove("dismissed")} onFocus={event => event.currentTarget.classList.remove("dismissed")}>
+          <a href="mailto:hello@ahmetefe.dev" aria-label="Email Ahmet Efe" title="Email"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 6 9 7 9-7" /></svg></a>
+            <div className="social-profile-card email-card">
+              <span className="social-card-network">A note, an idea, a hello</span>
+              <strong>Let’s talk.</strong>
+              <a className="email-address" href="mailto:hello@ahmetefe.dev">hello@ahmetefe.dev</a>
+              <a href="mailto:hello@ahmetefe.dev">Write an email <span aria-hidden="true">↗</span></a>
+            </div>
+          </div>
         </div><CityPreview /></div>
       </header>
 
@@ -465,7 +612,7 @@ export default function Portfolio() {
                       {item.id === "bachelors" && <span className="journey-thesis" style={{ left: `${thesisInsetStart}%`, width: `${thesisInsetWidth}%` }}>Thesis</span>}
                       {item.period.includes("now") && <i className="journey-now" />}
                     </span>
-                  </span><span className="journey-track-arrow" aria-hidden="true">↗</span>
+                  </span>
                 </button>)}
               </div>)}
               <div className="journey-board-foot"><span>Explore a chapter to see the details ↓</span><span>Earlier years compressed · more detail from Sep 2024</span></div>
@@ -494,8 +641,13 @@ export default function Portfolio() {
           </div>
 
           <div className="thesis-feature thesis-feature-real">
+            <div className="thesis-overview">
+              <div><span>01 / Problem</span><h3>Images aren’t stitch plans.</h3><p>Tiny color islands and fragmented regions interrupt the direction and flow of embroidery.</p></div>
+              <div><span>02 / Approach</span><h3>Merge with structure.</h3><p>Combine neighboring superpixels using color variation and boundary evidence, then organize the regions into a hierarchy.</p></div>
+              <div><span>03 / Result</span><h3>Regions ready for thread.</h3><p>Export layered polygons and direction hints for the next stage of the embroidery pipeline.</p></div>
+            </div>
             <div className="stitch-stage" aria-label="From an input image to segmented regions and an embroidery preview">
-              <Image className="stitch-image" src="/thesis/teaser.png" alt="A bird transformed from a flat image through superpixel segmentation into a direction-aware embroidered rendering" width={2798} height={840} sizes="94vw" loading="lazy" />
+              <Image className="stitch-image" src="/thesis/teaser.png" alt="A bird transformed from a flat image through superpixel segmentation into a direction-aware embroidered rendering" width={2798} height={840} sizes="94vw" loading="lazy" unoptimized />
             </div>
             <div className="stitch-labels" aria-hidden="true"><span>01 · Source image</span><span>02 · Segmented regions</span><span>03 · Embroidery preview</span></div>
             <div className="thesis-copy thesis-copy-grid">
@@ -538,10 +690,6 @@ export default function Portfolio() {
               <p>Small observations from mountain paths and city streets. A collection of light, architecture, and everyday details, photographed with my Sony A7C and iPhone.</p>
             </div>
             <div className="photo-controls">
-              <div className="temperature-toggle" aria-label="Gallery backdrop">
-                <button type="button" className={temperature === "warm" ? "active" : ""} onClick={() => setTemperature("warm")} aria-pressed={temperature === "warm"}>Warm backdrop</button>
-                <button type="button" className={temperature === "cool" ? "active" : ""} onClick={() => setTemperature("cool")} aria-pressed={temperature === "cool"}>Cool backdrop</button>
-              </div>
               <div className="view-toggle" aria-label="Gallery layout">
                 <button type="button" className={gallery === "editorial" ? "active" : ""} onClick={() => setGallery("editorial")} aria-pressed={gallery === "editorial"}>Editorial</button>
                 <button type="button" className={gallery === "contact-sheet" ? "active" : ""} onClick={() => setGallery("contact-sheet")} aria-pressed={gallery === "contact-sheet"}>Contact sheet</button>
@@ -552,28 +700,18 @@ export default function Portfolio() {
           <div className="gallery-toolbar"><div className="collection-filters" role="group" aria-label="Photo collection">{["All frames", "The Alps", "Swiss cities", "Istanbul"].map(collection => <button type="button" key={collection} aria-pressed={photoCollection === collection} onClick={() => setPhotoCollection(collection)}>{collection}</button>)}</div><p aria-live="polite">{String(visiblePhotos.length).padStart(2,"0")} frames <span>· Original edits</span></p></div>
 
           <div className={`photo-grid ${gallery}`} id="portfolio">
-            {visiblePhotos.map((photo) => (
+            {displayedPhotos.map((photo) => (
               <button className="photo-card" type="button" key={photo.id} onClick={() => setSelectedPhoto(photo)} onContextMenu={(event) => event.preventDefault()} aria-label={`Open frame ${photo.id}: ${photo.alt}`}>
                 <span>{String(photo.id).padStart(2, "0")}</span>
-                <Image src={photo.src} alt={photo.alt} width={photo.width} height={photo.height} sizes={gallery === "contact-sheet" ? "(max-width: 700px) 50vw, 25vw" : "(max-width: 700px) 100vw, 40vw"} loading={photo.id === 1 ? "eager" : "lazy"} draggable={false} />
+                <Image src={photo.src} alt={photo.alt} width={photo.width} height={photo.height} sizes={gallery === "contact-sheet" ? "(max-width: 700px) 50vw, 25vw" : "(max-width: 700px) 100vw, 40vw"} loader={frameLoader} loading="lazy" draggable={false} />
                 <small className="photo-place">{photo.location} · {photo.captured}</small>
                 <small className="photo-exif"><b>{photo.focalLength}</b><b>{photo.aperture}</b><b>{photo.shutter}s</b><b>ISO {photo.iso}</b></small>
                 <small className="view-frame">View frame ↗</small>
               </button>
             ))}
           </div>
-          <div className="gear-section" id="gear">
-            <div>
-              <p className="eyebrow">Camera gear</p>
-              <h3>The kit.</h3>
-            </div>
-            <dl>
-              <div><dt>Camera</dt><dd>Sony A7C</dd></div>
-              <div><dt>Lenses</dt><dd>Sony 28–60mm kit · Viltrox 40mm ƒ/2.5</dd></div>
-              <div><dt>Everyday camera</dt><dd>iPhone 14 Pro Max</dd></div>
-              <div><dt>Wrist strap</dt><dd>PGYTECH Camera Wrist Strap Air · Oak Grey</dd></div>
-            </dl>
-          </div>
+          {visiblePhotos.length > 12 && <div className="gallery-expansion"><p>{displayedPhotos.length} of {visiblePhotos.length} photographs</p><button type="button" aria-expanded={showAllPhotos} onClick={() => { setShowAllPhotos(!showAllPhotos); if(showAllPhotos) document.getElementById("photography")?.scrollIntoView({behavior:"instant"}); }}>{showAllPhotos ? "Back to selected frames" : `Show all ${visiblePhotos.length} photographs`}</button></div>}
+          <GearDisplay />
 
 
         </section>
@@ -582,7 +720,7 @@ export default function Portfolio() {
           <div className="section-marker light"><span>05</span><p>Contact</p></div>
           <div className="contact-copy">
             <p>Have a problem worth looking at twice?</p>
-            <a href="mailto:aserdar@ethz.ch">Let&apos;s talk.<Arrow diagonal /></a>
+            <a href="mailto:hello@ahmetefe.dev">Let&apos;s talk.<Arrow diagonal /></a>
           </div>
           <div className="contact-meta">
             <a href="https://github.com/ahmetefeserdar" target="_blank" rel="noreferrer">GitHub <Arrow diagonal /></a>
@@ -598,7 +736,7 @@ export default function Portfolio() {
         <a href="#profile">Back to top ↑</a>
       </footer>
 
-      {selectedPhoto && <Lightbox photo={selectedPhoto} onClose={() => setSelectedPhoto(null)} />}
+      {selectedPhoto && <Lightbox photo={selectedPhoto} neighbours={neighbouringFrames} onClose={closeLightbox} onNavigate={navigatePhoto} position={visiblePhotos.findIndex(photo => photo.id === selectedPhoto.id) + 1} total={visiblePhotos.length} />}
     </div>
   );
 }

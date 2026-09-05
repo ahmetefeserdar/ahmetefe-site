@@ -22,9 +22,10 @@ export default function SensorField() {
       y = event.clientY - bounds.top;
     }
     function move(event: PointerEvent) {
-      position(event);
+      if (reduced.matches || event.pointerType === "touch") return;
       if (frame) return;
       frame = requestAnimationFrame(() => {
+        position(event);
         frame = 0;
         hover!.style.transform = `translate3d(${x - 185}px, ${y - 185}px, 0)`;
         hover!.style.backgroundPosition = `${193 - x}px ${193 - y}px`;

@@ -4,9 +4,9 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 
 const exposures = [
-  { src: "/frames/41.webp", caption: "Zürich, through my lens", alt: "Zürich rooftops beneath a silver sky" },
-  { src: "/frames/23.webp", caption: "Along the Bosphorus", alt: "A suspension bridge over the Bosphorus in Istanbul" },
-  { src: "/frames/01.webp", caption: "A little higher up · Jungfrau", alt: "An autumn valley beneath the Jungfrau massif" },
+  { src: "/frames/w1280/41.webp", caption: "Zürich, through my lens", alt: "Zürich rooftops beneath a silver sky" },
+  { src: "/frames/w1280/23.webp", caption: "Along the Bosphorus", alt: "A suspension bridge over the Bosphorus in Istanbul" },
+  { src: "/frames/w1280/01.webp", caption: "A little higher up · Jungfrau", alt: "An autumn valley beneath the Jungfrau massif" },
 ];
 
 export default function CameraSensor() {
