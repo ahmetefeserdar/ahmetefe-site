@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 
-import SensorField from "./SensorField";
+import CameraSensor from "./CameraSensor";
 import CityPreview from "./CityPreview";
 import MergeEnergy from "./MergeEnergy";
 
@@ -204,14 +204,6 @@ const thesisEnd = timelinePosition("2025-05");
 const thesisInsetStart = ((thesisStart - bachelorStart) / (bachelorEnd - bachelorStart)) * 100;
 const thesisInsetWidth = ((thesisEnd - thesisStart) / (bachelorEnd - bachelorStart)) * 100;
 
-function OrganizationLogo({ id }: { id: string }) {
-  const organization = id === "masters" || id === "bachelors" ? "eth" : id;
-  if (organization === "tutoring") return <span className="organization-logo tutoring-mark" aria-hidden="true">∑</span>;
-  if (organization === "outlier" || organization === "habee") return <span className={`organization-logo organization-wordmark organization-${organization}`}><Image src={`/organizations/${organization}-wordmark.svg`} alt="" width={organization === "habee" ? 180 : 160} height={80} unoptimized /></span>;
-  const extension = organization === "eth" || organization === "outlier" ? "svg" : "png";
-  return <span className={`organization-logo organization-${organization}`}><Image src={`/organizations/${organization}.${extension}`} alt="" width={organization === "eth" ? 120 : 40} height={organization === "eth" ? 20 : 40} unoptimized /></span>;
-}
-
 function Arrow({ diagonal = false }: { diagonal?: boolean }) {
   return <span aria-hidden="true">{diagonal ? "↗" : "→"}</span>;
 }
@@ -220,6 +212,7 @@ function ColorLab({
   hue,
   chroma,
   light,
+  gamut,
   setHue,
   setChroma,
   setLight,
@@ -228,65 +221,52 @@ function ColorLab({
   hue: number;
   chroma: number;
   light: number;
+  gamut: "P3" | "sRGB";
   setHue: (value: number) => void;
   setChroma: (value: number) => void;
   setLight: (value: number) => void;
   setGamut: (value: "P3" | "sRGB") => void;
 }) {
-  const [mode, setMode] = useState<"Simple" | "P3" | "sRGB">("Simple");
-  const palettes = [
-    { name: "Terracotta", hue: 12, chroma: 88 },
-    { name: "Amber", hue: 36, chroma: 78 },
-    { name: "Forest", hue: 150, chroma: 48 },
-    { name: "Ocean", hue: 202, chroma: 72 },
-    { name: "Violet", hue: 265, chroma: 58 },
-    { name: "Rose", hue: 338, chroma: 64 },
-  ];
   return (
     <aside className="color-lab" aria-label="Interactive color laboratory">
       <div className="lab-head">
         <div>
           <p className="eyebrow">Grade this page</p>
-          <p className="lab-status"><i /> Make it feel like you</p>
+          <p className="lab-status"><i /> Live color system</p>
         </div>
         <span className="live-swatch" aria-hidden="true" />
       </div>
 
-      <div className="gamut-switch color-mode-switch" aria-label="Site color character">
-        {(["Simple", "P3", "sRGB"] as const).map((item) => (
+      <div className="gamut-switch" aria-label="Site color character">
+        {(["P3", "sRGB"] as const).map((item) => (
           <button
             key={item}
             type="button"
-            className={mode === item ? "active" : ""}
-            onClick={() => { setMode(item); setGamut(item === "Simple" ? "P3" : item); }}
-            aria-pressed={mode === item}
+            className={gamut === item ? "active" : ""}
+            onClick={() => setGamut(item)}
+            aria-pressed={gamut === item}
           >
-            {item === "Simple" ? "Simple" : item === "P3" ? "Vivid / P3" : "Quiet / sRGB"}
+            {item === "P3" ? "Vivid / P3" : "Quiet / sRGB"}
           </button>
         ))}
       </div>
 
-      {mode === "Simple" ? <div className="simple-color-controls">
-        <p>Pick an accent</p>
-        <div className="palette-options" role="group" aria-label="Accent palette">{palettes.map(palette => <button key={palette.name} type="button" aria-pressed={hue === palette.hue && chroma === palette.chroma} onClick={() => { setHue(palette.hue); setChroma(palette.chroma); }}><span style={{ background: `hsl(${palette.hue} ${palette.chroma}% 58%)` }} aria-hidden="true" /><span>{palette.name}</span></button>)}</div>
-        <label className="simple-brightness"><span>Page brightness</span><input aria-label="Page brightness" type="range" min="42" max="72" value={light} onChange={event => setLight(Number(event.target.value))} /><span aria-hidden="true">☀</span></label>
-        <button className="reset-palette" type="button" onClick={() => { setHue(12); setChroma(88); setLight(58); }}>Reset to original ↺</button>
-      </div> : <div className="lab-controls">
+      <div className="lab-controls">
         <label>
           <span><b>Accent hue</b><em>{hue}°</em></span>
           <input aria-label="Accent hue" type="range" min="0" max="360" value={hue} onInput={(event) => setHue(Number(event.currentTarget.value))} />
         </label>
         <label>
-          <span><b>Accent chroma</b><em>{chroma}%</em></span>
-          <input aria-label="Accent chroma" type="range" min="0" max="100" value={chroma} onInput={(event) => setChroma(Number(event.currentTarget.value))} />
+          <span><b>Image chroma</b><em>{chroma}%</em></span>
+          <input aria-label="Image chroma" type="range" min="0" max="100" value={chroma} onInput={(event) => setChroma(Number(event.currentTarget.value))} />
         </label>
         <label>
           <span><b>Exposure</b><em>{light > 58 ? "+" : ""}{((light - 58) / 10).toFixed(1)} EV</em></span>
           <input aria-label="Site exposure" type="range" min="42" max="72" value={light} onInput={(event) => setLight(Number(event.currentTarget.value))} />
         </label>
-      </div>}
+      </div>
 
-      <p className="lab-readout">{mode === "Simple" ? "Your palette, across the page. Photos stay original." : <>H {hue}° · C {chroma} · {light > 58 ? "+" : ""}{((light - 58) / 10).toFixed(1)} EV</>}</p>
+      <p className="lab-readout">H {hue}° · C {chroma} · {light > 58 ? "+" : ""}{((light - 58) / 10).toFixed(1)} EV</p>
     </aside>
   );
 }
@@ -345,7 +325,6 @@ export default function Portfolio() {
   const [gamut, setGamut] = useState<"P3" | "sRGB">("P3");
   const [temperature, setTemperature] = useState<"warm" | "cool">("warm");
   const [gallery, setGallery] = useState<"editorial" | "contact-sheet">("editorial");
-  const [photoCollection, setPhotoCollection] = useState("All frames");
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [activeJourney, setActiveJourney] = useState("midas");
 
@@ -370,8 +349,6 @@ export default function Portfolio() {
     } as CSSProperties;
   }, [hue, chroma, light, gamut, temperature]);
 
-  const visiblePhotos = photos.filter(photo => photoCollection === "All frames" || (photoCollection === "The Alps" ? photo.location.includes("Jungfrau") : photoCollection === "Istanbul" ? /Istanbul/.test(photo.location) : !/Jungfrau|Istanbul/.test(photo.location)));
-
   return (
     <div className={`site-shell gamut-${gamut.toLowerCase()}`} style={theme}>
       <a className="skip-link" href="#main-content">Skip to content</a>
@@ -393,18 +370,18 @@ export default function Portfolio() {
           </div>
           <a href="#contact">Contact</a>
         </nav>
-        <div className="header-contacts"><div className="social-links" aria-label="Social profiles">
-          <a href="https://www.linkedin.com/in/ahmetefeserdar/" target="_blank" rel="noreferrer" aria-label="LinkedIn profile" title="LinkedIn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM3.5 9h3v12h-3V9ZM10 9h3v1.6c.8-1.2 1.9-1.9 3.5-1.9 3 0 4 1.9 4 5V21h-3v-6.4c0-1.8-.5-2.9-2-2.9-1.7 0-2.5 1.2-2.5 3V21h-3V9Z" /></svg></a>
-          <a href="https://github.com/ahmetefeserdar" target="_blank" rel="noreferrer" aria-label="GitHub profile" title="GitHub"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.86c-2.78.6-3.37-1.18-3.37-1.18-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.64-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.03A9.6 9.6 0 0 1 12 6.83c.85 0 1.71.11 2.51.34 1.91-1.3 2.75-1.03 2.75-1.03.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.69-4.57 4.94.36.31.68.92.68 1.85v2.75c0 .27.18.58.69.48A10 10 0 0 0 12 2Z" /></svg></a>
-          <a href="mailto:aserdar@ethz.ch" aria-label="Email Ahmet Efe" title="Email"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 6 9 7 9-7" /></svg></a>
-        </div><CityPreview /></div>
+        <CityPreview />
       </header>
 
       <main id="main-content" tabIndex={-1}>
-        <section className="hero profile-hero profile-camera profile-simple" id="profile">
-          <SensorField />
-          <div className="hero-kicker"><span>01 / Profile</span><span>Computer graphics · vision · AI</span></div>
+        <section className="hero profile-hero profile-camera" id="profile">
+          <CameraSensor />
           <div className="hero-copy">
+            <div className="hero-kicker">
+              <span>01 / Profile</span>
+              <span>Computer graphics · vision · AI</span>
+              <span>Zürich ↔ Istanbul</span>
+            </div>
             <div className="identity-block">
               <p className="identity-label">Ahmet Efe</p>
               <h1><span>Ahmet Efe</span><em>Serdar.</em></h1>
@@ -422,6 +399,7 @@ export default function Portfolio() {
               hue={hue}
               chroma={chroma}
               light={light}
+              gamut={gamut}
               setHue={setHue}
               setChroma={setChroma}
               setLight={setLight}
@@ -435,6 +413,13 @@ export default function Portfolio() {
               <div><dt>Studying</dt><dd>Computer Science M.Sc. · ETH Zürich</dd></div>
               <div><dt>Languages</dt><dd>Turkish · English · German</dd></div>
             </dl>
+          </div>
+        </section>
+
+        <section className="ticker" aria-label="Areas of practice">
+          <div>
+            <span>Computer graphics</span><b>✳</b><span>Computer vision</span><b>✳</b>
+            <span>AI</span><b>✳</b><span>Backend engineering</span><b>✳</b><span>Photography</span><b>✳</b>
           </div>
         </section>
 
@@ -475,7 +460,7 @@ export default function Portfolio() {
               {journeyItems.map((item, index) => (
                 <article id={`chapter-${item.id}`} key={item.id} className={`journey-chapter ${item.kind} ${activeJourney === item.id ? "active" : ""}`} onMouseEnter={() => setActiveJourney(item.id)}>
                   <div className="chapter-top"><span className="chapter-number">{String(index + 1).padStart(2, "0")} / {item.kind === "education" ? "Education" : "Experience"}</span>{item.period.includes("now") && <span className="chapter-current"><i />Ongoing</span>}</div>
-                  <div className="chapter-organization"><OrganizationLogo id={item.id} /><p className="chapter-place">{item.place}</p></div>
+                  <p className="chapter-place">{item.place}</p>
                   <h3>{item.title}</h3>
                   <p className="chapter-period">{item.period}</p>
                   <p className="chapter-detail">{item.detail}</p>
@@ -530,17 +515,17 @@ export default function Portfolio() {
           </div>
         </section>
 
-        <section className={`photography photo-room-${temperature}`} id="photography">
+        <section className="photography" id="photography">
           <div className="photography-head">
             <div className="section-marker"><span>04</span><p>Photography</p></div>
             <div>
               <h2>Light, place,<br /><em>and attention.</em></h2>
-              <p>Small observations from mountain paths and city streets. A collection of light, architecture, and everyday details, photographed with my Sony A7C and iPhone.</p>
+              <p>Forty-eight edited frames from the Alps, Zürich, Winterthur, Zug, Stein am Rhein, and Istanbul—made with the Sony A7C and the camera always in my pocket.</p>
             </div>
             <div className="photo-controls">
-              <div className="temperature-toggle" aria-label="Gallery backdrop">
-                <button type="button" className={temperature === "warm" ? "active" : ""} onClick={() => setTemperature("warm")} aria-pressed={temperature === "warm"}>Warm backdrop</button>
-                <button type="button" className={temperature === "cool" ? "active" : ""} onClick={() => setTemperature("cool")} aria-pressed={temperature === "cool"}>Cool backdrop</button>
+              <div className="temperature-toggle" aria-label="Color temperature">
+                <button type="button" className={temperature === "warm" ? "active" : ""} onClick={() => setTemperature("warm")} aria-pressed={temperature === "warm"}>Warm / 5200K</button>
+                <button type="button" className={temperature === "cool" ? "active" : ""} onClick={() => setTemperature("cool")} aria-pressed={temperature === "cool"}>Cool / 7000K</button>
               </div>
               <div className="view-toggle" aria-label="Gallery layout">
                 <button type="button" className={gallery === "editorial" ? "active" : ""} onClick={() => setGallery("editorial")} aria-pressed={gallery === "editorial"}>Editorial</button>
@@ -549,19 +534,6 @@ export default function Portfolio() {
             </div>
           </div>
 
-          <div className="gallery-toolbar"><div className="collection-filters" role="group" aria-label="Photo collection">{["All frames", "The Alps", "Swiss cities", "Istanbul"].map(collection => <button type="button" key={collection} aria-pressed={photoCollection === collection} onClick={() => setPhotoCollection(collection)}>{collection}</button>)}</div><p aria-live="polite">{String(visiblePhotos.length).padStart(2,"0")} frames <span>· Original edits</span></p></div>
-
-          <div className={`photo-grid ${gallery}`} id="portfolio">
-            {visiblePhotos.map((photo) => (
-              <button className="photo-card" type="button" key={photo.id} onClick={() => setSelectedPhoto(photo)} onContextMenu={(event) => event.preventDefault()} aria-label={`Open frame ${photo.id}: ${photo.alt}`}>
-                <span>{String(photo.id).padStart(2, "0")}</span>
-                <Image src={photo.src} alt={photo.alt} width={photo.width} height={photo.height} sizes={gallery === "contact-sheet" ? "(max-width: 700px) 50vw, 25vw" : "(max-width: 700px) 100vw, 40vw"} loading={photo.id === 1 ? "eager" : "lazy"} draggable={false} />
-                <small className="photo-place">{photo.location} · {photo.captured}</small>
-                <small className="photo-exif"><b>{photo.focalLength}</b><b>{photo.aperture}</b><b>{photo.shutter}s</b><b>ISO {photo.iso}</b></small>
-                <small className="view-frame">View frame ↗</small>
-              </button>
-            ))}
-          </div>
           <div className="gear-section" id="gear">
             <div>
               <p className="eyebrow">Camera gear</p>
@@ -575,6 +547,17 @@ export default function Portfolio() {
             </dl>
           </div>
 
+          <div className={`photo-grid ${gallery}`} id="portfolio">
+            {photos.map((photo) => (
+              <button className="photo-card" type="button" key={photo.id} onClick={() => setSelectedPhoto(photo)} onContextMenu={(event) => event.preventDefault()} aria-label={`Open frame ${photo.id}: ${photo.alt}`}>
+                <span>{String(photo.id).padStart(2, "0")}</span>
+                <Image src={photo.src} alt={photo.alt} width={photo.width} height={photo.height} sizes={gallery === "contact-sheet" ? "(max-width: 700px) 50vw, 25vw" : "(max-width: 700px) 100vw, 40vw"} loading={photo.id === 1 ? "eager" : "lazy"} draggable={false} />
+                <small className="photo-place">{photo.location} · {photo.captured}</small>
+                <small className="photo-exif"><b>{photo.focalLength}</b><b>{photo.aperture}</b><b>{photo.shutter}s</b><b>ISO {photo.iso}</b></small>
+                <small className="view-frame">View frame ↗</small>
+              </button>
+            ))}
+          </div>
 
         </section>
 
