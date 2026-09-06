@@ -2,7 +2,8 @@
 
 Snapshot before the camera-sensor experiment. No commit needed.
 
-The original component remains at `app/components/ProfileField.tsx`. To restore only
+The original component is saved as `ProfileField.tsx.txt` in this folder. Copy it to
+`app/components/ProfileField.tsx` to restore it. To restore only
 that background, replace `<CameraSensor />` in Portfolio with `<ProfileField hue={hue} />`
 and restore its import. Remove the `profile-camera` class and camera-specific profile
 layout styles if restoring the original arrangement too.

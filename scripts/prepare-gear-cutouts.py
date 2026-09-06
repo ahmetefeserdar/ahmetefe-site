@@ -15,6 +15,7 @@ from PIL import Image, ImageFilter
 from scipy import ndimage
 
 ROOT = Path(__file__).resolve().parents[1] / "public" / "gear"
+SOURCES = Path(__file__).resolve().parents[1] / "assets" / "gear"
 # Chosen so no cutout is meaningfully upscaled past its source resolution while
 # still covering the widest object at 2x on screen.
 PX_PER_MM = 4.6
@@ -66,7 +67,7 @@ def matte(picture: Image.Image, name: str) -> Image.Image:
 
 
 for name, spec in KIT.items():
-    picture = matte(Image.open(ROOT / spec["source"]).convert("RGBA"), name)
+    picture = matte(Image.open(SOURCES / spec["source"]).convert("RGBA"), name)
     # Crop to the silhouette exactly: the file's own size is now the object's size.
     picture = picture.crop(picture.getbbox())
 

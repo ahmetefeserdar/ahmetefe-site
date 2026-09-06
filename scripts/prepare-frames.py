@@ -1,6 +1,6 @@
 """Derive the gallery and lightbox images from the full-resolution masters.
 
-photo-masters/NN.jpg holds the untouched exports. They live outside public/ so
+assets/photography/NN.jpg holds the untouched exports. They live outside public/ so
 the 140 MB of originals never reach the static export; everything the site ships
 is generated from them, so re-running this script is always safe.
 
@@ -14,7 +14,7 @@ from PIL import Image
 
 PROJECT = Path(__file__).resolve().parents[1]
 ROOT = PROJECT / "public" / "frames"
-MASTERS = PROJECT / "photo-masters"
+MASTERS = PROJECT / "assets" / "photography"
 # Gallery sizes are actual widths, matching the loader's srcset descriptors.
 # The lightbox retains its longest-edge limit.
 DERIVATIVES = [(640, "w640", 74), (1280, "w1280", 76), (2400, "view", 80)]

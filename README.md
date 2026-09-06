@@ -1,36 +1,42 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Ahmet Efe's portfolio
 
-## Getting Started
+Next.js App Router, React, TypeScript and a static export hosted on Cloudflare.
 
-First, run the development server:
+## Development
 
-```bash
+```sh
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000. Run `npm run lint` and `npx tsc --noEmit` for checks.
+`npm run build` (also `npm run export`) generates the static site in `out/`.
+Deploy that directory; `next start` is not supported by this static-export setup.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Structure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `app/`: route, metadata, icons, active `globals.css`, gallery loader and UI components.
+- `public/`: assets used by the live website, including generated gallery and gear images.
+- `assets/photography/`: original photo masters, excluded from the deployed site.
+- `assets/gear/`: original product photos and source attribution.
+- `assets/thesis/`: supporting thesis images retained for future edits.
+- `scripts/`: image preparation tools.
+- `design-archive/`: deliberate design snapshots and retired experiments for rollback.
+- `.next/`, `out/`, `node_modules/`: generated, ignored directories.
 
-## Learn More
+## Image preparation
 
-To learn more about Next.js, take a look at the following resources:
+Install Python dependencies in a virtual environment:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r scripts/requirements.txt
+python scripts/prepare-frames.py
+python scripts/prepare-gear-cutouts.py
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Gallery derivatives are 640 and 1280 pixels wide; lightbox images have a 2400-pixel
+longest edge. Gear cutouts are generated from `assets/gear/` into `public/gear/`.
+Commit generated public assets along with changes to their preparation scripts.
+Normal builds use these checked-in assets and do not require Python.
