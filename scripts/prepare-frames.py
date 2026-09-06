@@ -15,9 +15,9 @@ from PIL import Image
 PROJECT = Path(__file__).resolve().parents[1]
 ROOT = PROJECT / "public" / "frames"
 MASTERS = PROJECT / "photo-masters"
-# Long-edge width, output directory, encoder quality.
+# Gallery sizes are actual widths, matching the loader's srcset descriptors.
+# The lightbox retains its longest-edge limit.
 DERIVATIVES = [(640, "w640", 74), (1280, "w1280", 76), (2400, "view", 80)]
-LONGEST = max(width for width, _, _ in DERIVATIVES)
 
 for width, folder, quality in DERIVATIVES:
     (ROOT / folder).mkdir(parents=True, exist_ok=True)
@@ -25,11 +25,9 @@ for width, folder, quality in DERIVATIVES:
 written = 0
 for master in sorted(MASTERS.glob("*.jpg")):
     picture = Image.open(master)
-    # Decode at the smallest DCT scale that still covers the largest derivative.
-    picture.draft("RGB", (LONGEST, LONGEST))
     picture = picture.convert("RGB")
-    for long_edge, folder, quality in DERIVATIVES:
-        scale = long_edge / max(picture.size)
+    for size, folder, quality in DERIVATIVES:
+        scale = size / (max(picture.size) if folder == "view" else picture.width)
         if scale >= 1:
             resized = picture
         else:

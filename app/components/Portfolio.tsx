@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import frameLoader from "../frame-loader";
 import SensorField from "./SensorField";
@@ -377,7 +377,17 @@ function Lightbox({ photo, neighbours, onClose, onNavigate, position, total }: {
   );
 }
 
+function subscribeToTheme(onChange: () => void) {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  return () => observer.disconnect();
+}
+
+const readDarkTheme = () => document.documentElement.dataset.theme === "dark";
+const serverDarkTheme = () => false;
+
 export default function Portfolio() {
+  const isDark = useSyncExternalStore(subscribeToTheme, readDarkTheme, serverDarkTheme);
   // The blocking script in the layout stamps data-theme before the first paint,
   // so the button reads the document instead of holding its own copy of the
   // theme: no wrong icon on the first frame, and nothing to re-sync on hydration.
@@ -517,7 +527,7 @@ export default function Portfolio() {
         <div className="header-contacts"><button className="kelvin-toggle" type="button" onClick={() => setTemperature(temperature === "warm" ? "cool" : "warm")} aria-label={`Page white balance is ${temperature === "warm" ? "3200 Kelvin, warm" : "5600 Kelvin, cool"}. Switch to ${temperature === "warm" ? "cool" : "warm"}.`} title={temperature === "warm" ? "Warm page · 3200K" : "Cool page · 5600K"}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><path d="M12 4a8 8 0 0 1 0 16Z" fill="currentColor" stroke="none" /></svg>
           <span>{temperature === "warm" ? "3200K" : "5600K"}</span>
-        </button><button className="theme-toggle" type="button" onClick={toggleTheme} aria-label="Switch between light and dark mode" title="Switch theme">
+        </button><button className="theme-toggle" type="button" onClick={toggleTheme} aria-label="Dark mode" aria-pressed={isDark} title={isDark ? "Switch to light mode" : "Switch to dark mode"}>
           <svg className="theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" /></svg>
           <svg className="theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14A8.5 8.5 0 0 1 10 3.5 8.5 8.5 0 1 0 20.5 14Z" /></svg>
         </button><div className="social-links" aria-label="Social profiles">
