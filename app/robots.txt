@@ -1,4 +1,20 @@
+# Search engines and AI search/answer tools may index and cite this site.
+# Using its content to train or fine-tune AI models is not permitted.
+# Content signals: https://contentsignals.org
+
 User-Agent: *
+Content-Signal: search=yes, ai-input=yes, ai-train=no
 Allow: /
+
+# Crawlers that collect content for AI training
+User-Agent: GPTBot
+User-Agent: ClaudeBot
+User-Agent: Google-Extended
+User-Agent: Applebot-Extended
+User-Agent: CCBot
+User-Agent: meta-externalagent
+User-Agent: Bytespider
+User-Agent: cohere-training-data-crawler
+Disallow: /
 
 Sitemap: https://ahmetefe.dev/sitemap.xml
