@@ -255,28 +255,44 @@ function subscribeToNarrow(onChange: () => void) {
 const readNarrow = () => matchMedia(narrowQuery).matches;
 const serverNarrow = () => false;
 
-type Temperature = "warm" | "cool";
+// Paper white balance, in Kelvin. The simple mode offers two presets; the
+// precision modes expose the whole range.
+const WARM_KELVIN = 3200;
+const COOL_KELVIN = 5600;
+const MIN_KELVIN = 2700;
+const MAX_KELVIN = 6500;
+
+// Signed tint strength: 1 at 3200K (the original warm paper), 0 at a neutral
+// 5000K, and negative towards daylight, reaching -1 at 6500K.
+const kelvinTint = (kelvin: number) => kelvin <= 5000 ? (5000 - kelvin) / 1800 : -(kelvin - 5000) / 1500;
+
+// Range inputs paint their track from --track, a gradient that shows what the
+// slider changes (see the shared slider styles in globals.css).
+const hueTrack = { "--track": "linear-gradient(90deg, hsl(0 75% 56%), hsl(60 80% 52%), hsl(120 55% 45%), hsl(180 60% 45%), hsl(240 65% 62%), hsl(300 60% 56%), hsl(360 75% 56%))" } as CSSProperties;
+const chromaTrack = (hue: number) => ({ "--track": `linear-gradient(90deg, hsl(${hue} 0% 60%), hsl(${hue} 95% 52%))` } as CSSProperties);
+const exposureTrack = { "--track": "linear-gradient(90deg, hsl(40 8% 24%), hsl(42 28% 94%))" } as CSSProperties;
+const kelvinTrack = { "--track": "linear-gradient(90deg, #f59a4a, #ffc98f 30%, #fbecdc 60%, #e6edf7 82%, #c9daf2)" } as CSSProperties;
 
 function ColorLab({
   hue,
   chroma,
   light,
-  temperature,
+  kelvin,
   setHue,
   setChroma,
   setLight,
   setGamut,
-  setTemperature,
+  setKelvin,
 }: {
   hue: number;
   chroma: number;
   light: number;
-  temperature: Temperature;
+  kelvin: number;
   setHue: (value: number) => void;
   setChroma: (value: number) => void;
   setLight: (value: number) => void;
   setGamut: (value: "P3" | "sRGB") => void;
-  setTemperature: (value: Temperature) => void;
+  setKelvin: (value: number) => void;
 }) {
   const [mode, setMode] = useState<"Simple" | "P3" | "sRGB">("Simple");
   const narrow = useSyncExternalStore(subscribeToNarrow, readNarrow, serverNarrow);
@@ -284,6 +300,7 @@ function ColorLab({
   // hydration); a click turns it into the visitor's explicit choice.
   const [expanded, setExpanded] = useState<boolean | null>(null);
   const open = expanded ?? !narrow;
+  const exposure = `${light > 58 ? "+" : ""}${((light - 58) / 10).toFixed(1)} EV`;
   const palettes = [
     { name: "Terracotta", hue: 12, chroma: 88 },
     { name: "Amber", hue: 36, chroma: 78 },
@@ -320,35 +337,36 @@ function ColorLab({
       {mode === "Simple" ? <div className="simple-color-controls">
         <p>Pick an accent</p>
         <div className="palette-options" role="group" aria-label="Accent palette">{palettes.map(palette => <button key={palette.name} type="button" aria-pressed={hue === palette.hue && chroma === palette.chroma} onClick={() => { setHue(palette.hue); setChroma(palette.chroma); }}><span style={{ background: `hsl(${palette.hue} ${palette.chroma}% 58%)` }} aria-hidden="true" /><span>{palette.name}</span></button>)}</div>
-        <label className="simple-brightness"><span>Page brightness</span><input aria-label="Page brightness" type="range" min="42" max="72" value={light} onChange={event => setLight(Number(event.target.value))} /><span aria-hidden="true">☀</span></label>
-        <button className="reset-palette" type="button" onClick={() => { setHue(12); setChroma(88); setLight(58); setTemperature("warm"); }}>Reset to original ↺</button>
+        <label className="simple-brightness"><span>Page brightness</span><input aria-label="Page brightness" type="range" min="42" max="72" value={light} style={exposureTrack} onChange={event => setLight(Number(event.target.value))} /></label>
+        <div className="lab-tone">
+          <span id="page-tone-label">Page tone</span>
+          <div className="tone-switch" role="group" aria-labelledby="page-tone-label">
+            {([["Warm", WARM_KELVIN], ["Cool", COOL_KELVIN]] as const).map(([label, value]) => (
+              <button key={label} type="button" aria-pressed={kelvin === value} onClick={() => setKelvin(value)} title={`${label} paper · ${value}K`}>{label}</button>
+            ))}
+          </div>
+        </div>
+        <button className="reset-palette" type="button" onClick={() => { setHue(12); setChroma(88); setLight(58); setKelvin(WARM_KELVIN); }}>Reset to original <span aria-hidden="true">↺</span></button>
       </div> : <div className="lab-controls">
         <label>
           <span><b>Accent hue</b><em>{hue}°</em></span>
-          <input aria-label="Accent hue" type="range" min="0" max="360" value={hue} onInput={(event) => setHue(Number(event.currentTarget.value))} />
+          <input aria-label="Accent hue" type="range" min="0" max="360" value={hue} style={hueTrack} onChange={(event) => setHue(Number(event.target.value))} />
         </label>
         <label>
           <span><b>Accent chroma</b><em>{chroma}%</em></span>
-          <input aria-label="Accent chroma" type="range" min="0" max="100" value={chroma} onInput={(event) => setChroma(Number(event.currentTarget.value))} />
+          <input aria-label="Accent chroma" type="range" min="0" max="100" value={chroma} style={chromaTrack(hue)} onChange={(event) => setChroma(Number(event.target.value))} />
         </label>
         <label>
-          <span><b>Exposure</b><em>{light > 58 ? "+" : ""}{((light - 58) / 10).toFixed(1)} EV</em></span>
-          <input aria-label="Site exposure" type="range" min="42" max="72" value={light} onInput={(event) => setLight(Number(event.currentTarget.value))} />
+          <span><b>Exposure</b><em>{exposure}</em></span>
+          <input aria-label="Site exposure" type="range" min="42" max="72" value={light} style={exposureTrack} onChange={(event) => setLight(Number(event.target.value))} />
+        </label>
+        <label>
+          <span><b>White balance</b><em>{kelvin}K</em></span>
+          <input aria-label="Paper white balance in Kelvin" type="range" min={MIN_KELVIN} max={MAX_KELVIN} step="100" value={kelvin} style={kelvinTrack} onChange={(event) => setKelvin(Number(event.target.value))} />
         </label>
       </div>}
 
-      <div className="lab-tone">
-        <span id="page-tone-label">Page tone</span>
-        <div className="tone-switch" role="group" aria-labelledby="page-tone-label">
-          {(["warm", "cool"] as const).map((tone) => (
-            <button key={tone} type="button" aria-pressed={temperature === tone} onClick={() => setTemperature(tone)} title={tone === "warm" ? "Warm paper · 3200K" : "Cool paper · 5600K"}>
-              {tone === "warm" ? "Warm" : "Cool"}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <p className="lab-readout">{mode === "Simple" ? "Your palette, across the page. Photos stay original." : <>H {hue}° · C {chroma} · {light > 58 ? "+" : ""}{((light - 58) / 10).toFixed(1)} EV</>}</p>
+      <p className="lab-readout">{mode === "Simple" ? "Your palette, across the page. Photos stay original." : <>H {hue}° · C {chroma} · {exposure} · {kelvin}K</>}</p>
       </div>
     </div>
   );
@@ -384,7 +402,7 @@ function Lightbox({ photo, neighbours, onClose, onNavigate, position, total }: {
 
   return (
     <div ref={dialogRef} className="lightbox" role="dialog" aria-modal="true" aria-label={`Photograph ${position} of ${total}`} onClick={onClose}>
-      <button ref={closeRef} type="button" onClick={onClose} aria-label="Close photograph">Close ×</button>
+      <button ref={closeRef} type="button" onClick={onClose} aria-label="Close photograph">Close <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg></button>
       <div className="lightbox-frame" onClick={(event) => event.stopPropagation()}>
         <div className="lightbox-image" onTouchStart={event => { touchStart.current = {x:event.touches[0].clientX,y:event.touches[0].clientY}; }} onTouchEnd={event => { const start=touchStart.current; touchStart.current=null; if (!start) return; const dx=event.changedTouches[0].clientX-start.x,dy=event.changedTouches[0].clientY-start.y; if(Math.abs(dx)>60 && Math.abs(dx)>Math.abs(dy)*1.5) onNavigate(dx<0?1:-1); }}>
           <div className="lightbox-media" style={{ "--media-ratio": photo.width / photo.height } as CSSProperties}>
@@ -395,7 +413,7 @@ function Lightbox({ photo, neighbours, onClose, onNavigate, position, total }: {
           </div>
         </div>
         <div className="lightbox-caption">
-          <div className="lightbox-navigation"><button type="button" onClick={()=>onNavigate(-1)} aria-label="Previous photograph">←</button><span aria-live="polite">{position} / {total}</span><button type="button" onClick={()=>onNavigate(1)} aria-label="Next photograph">→</button></div>
+          <div className="lightbox-navigation"><button type="button" onClick={()=>onNavigate(-1)} aria-label="Previous photograph"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6" /></svg></button><span aria-live="polite">{position} / {total}</span><button type="button" onClick={()=>onNavigate(1)} aria-label="Next photograph"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg></button></div>
           <p><span>Frame {String(photo.id).padStart(2, "0")}</span>{photo.alt}</p>
           <dl>
             <div><dt>Place</dt><dd>{photo.location}</dd></div>
@@ -435,7 +453,7 @@ export default function Portfolio() {
   const [chroma, setChroma] = useState(88);
   const [light, setLight] = useState(58);
   const [gamut, setGamut] = useState<"P3" | "sRGB">("P3");
-  const [temperature, setTemperature] = useState<Temperature>("warm");
+  const [kelvin, setKelvin] = useState(WARM_KELVIN);
   const [emailCopied, setEmailCopied] = useState(false);
   const copyEmail = async () => {
     const address = "hello@ahmetefe.dev";
@@ -514,10 +532,16 @@ export default function Portfolio() {
     const imageSaturation = (0.25 + chroma / 100 * (gamut === "P3" ? 1.25 : 0.72)).toFixed(2);
     const imageBrightness = (0.84 + (light - 42) * 0.012).toFixed(2);
     const accentChroma = Math.round(Math.max(18, chroma * (gamut === "P3" ? 1 : 0.62)));
-    const warm = temperature === "warm";
+    // Warm paper leans amber and cool paper leans blue; the tint fades to a
+    // neutral grey at 5000K instead of flipping between two fixed papers.
+    const tint = kelvinTint(kelvin);
+    const warm = tint >= 0;
+    const strength = Math.abs(tint);
+    const paperHue = warm ? 42 : 205;
+    const paperSaturation = (warm ? 24 : 20) * strength;
     // Grade the accent down only as far as legibility needs: 3:1 behind display
     // type, 4.5:1 behind running text. A palette that already passes is left alone.
-    const paperLuminance = hslLuminance(42, 24, paperLight);
+    const paperLuminance = hslLuminance(paperHue, paperSaturation, paperLight);
     const darkChroma = Math.max(28, accentChroma - 10);
     const displayLight = Math.min(light, readableLightness(hue, accentChroma, paperLuminance, 3.05));
     const textLight = Math.min(light, readableLightness(hue, accentChroma, paperLuminance, 4.6));
@@ -531,21 +555,21 @@ export default function Portfolio() {
       "--accent-display": `hsl(${hue} ${accentChroma}% ${displayLight}%)`,
       "--accent-text": `hsl(${hue} ${accentChroma}% ${textLight}%)`,
       "--muted": `hsl(45 7% ${readableLightness(45, 7, paperLuminance, 4.6)}%)`,
-      "--paper": `hsl(${warm ? 42 : 198} 24% ${paperLight}%)`,
-      "--ink": `hsl(${warm ? 55 : 202} 14% ${Math.max(7, 18 - (light - 42) * 0.23)}%)`,
+      "--paper": `hsl(${paperHue} ${paperSaturation.toFixed(1)}% ${paperLight}%)`,
+      "--ink": `hsl(${warm ? 55 : 202} ${(14 * strength).toFixed(1)}% ${Math.max(7, 18 - (light - 42) * 0.23)}%)`,
       // Near-black leaves almost no room for chroma, so the dark theme is lifted
       // a little and carries more saturation; the tint then also reaches the ink,
       // the rules and every color-mix surface built on the paper.
-      "--night-paper": `hsl(${warm ? 26 : 210} ${warm ? 17 : 19}% ${(5 + (light - 58) * 0.08).toFixed(2)}%)`,
-      "--night-ink": `hsl(${warm ? 40 : 208} ${warm ? 24 : 20}% 93%)`,
-      "--night-muted": `hsl(${warm ? 36 : 214} ${warm ? 11 : 13}% 68%)`,
-      "--night-line": warm ? "hsl(34 40% 82% / .22)" : "hsl(206 40% 84% / .22)",
+      "--night-paper": `hsl(${warm ? 26 : 210} ${((warm ? 17 : 19) * strength).toFixed(1)}% ${(5 + (light - 58) * 0.08).toFixed(2)}%)`,
+      "--night-ink": `hsl(${warm ? 40 : 208} ${((warm ? 24 : 20) * strength).toFixed(1)}% 93%)`,
+      "--night-muted": `hsl(${warm ? 36 : 214} ${((warm ? 11 : 13) * strength).toFixed(1)}% 68%)`,
+      "--night-line": `hsl(${warm ? 34 : 206} ${(40 * strength).toFixed(1)}% ${warm ? 82 : 84}% / .22)`,
       "--photo-saturation": imageSaturation,
       "--photo-brightness": imageBrightness,
-      "--photo-warmth": warm ? "sepia(.08)" : "hue-rotate(8deg)",
+      "--photo-warmth": warm ? `sepia(${(0.08 * strength).toFixed(3)})` : `hue-rotate(${(8 * strength).toFixed(1)}deg)`,
       "--gamut-force": gamut === "P3" ? "1" : ".76",
     } as CSSProperties;
-  }, [hue, chroma, light, gamut, temperature]);
+  }, [hue, chroma, light, gamut, kelvin]);
 
   const visiblePhotos = useMemo(() => photos.filter(photo => photoCollection === "All frames" || (photoCollection === "The Alps" ? photo.location.includes("Jungfrau") : photoCollection === "Istanbul" ? /Istanbul/.test(photo.location) : !/Jungfrau|Istanbul/.test(photo.location))), [photoCollection]);
   const featuredFrames = [1, 4, 8, 12, 17, 22, 26, 30, 35, 40, 44, 48];
@@ -634,12 +658,12 @@ export default function Portfolio() {
               hue={hue}
               chroma={chroma}
               light={light}
-              temperature={temperature}
+              kelvin={kelvin}
               setHue={setHue}
               setChroma={setChroma}
               setLight={setLight}
               setGamut={setGamut}
-              setTemperature={setTemperature}
+              setKelvin={setKelvin}
             />
             <dl className="profile-facts">
 
@@ -749,7 +773,7 @@ export default function Portfolio() {
           </div>
         </section>
 
-        <section className={`photography photo-room-${temperature}`} id="photography">
+        <section className="photography photo-room" id="photography">
           <div className="photography-head">
             <div className="section-marker"><span>04</span><p>Photography</p></div>
             <div>

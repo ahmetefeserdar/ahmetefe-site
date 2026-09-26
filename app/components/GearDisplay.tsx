@@ -54,7 +54,7 @@ export default function GearDisplay() {
   return <div className={`gear-section gear-display ${open ? "gear-open" : ""}`} id="gear">
     <button type="button" className="gear-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
       <span><small>Camera gear · 5 items</small><strong>What I shoot with</strong></span>
-      <span className="gear-toggle-sign" aria-hidden="true">{open ? "−" : "+"}</span>
+      <span className="toggle-sign" aria-hidden="true" />
     </button>
     <div className="gear-list"><p className="eyebrow">Camera gear</p><h3>A small kit.<br /><em>Plenty to see.</em></h3>
       <div className="gear-items">{kit.map((gear, index) => <button key={gear.id} type="button" className={active === gear.id ? "is-active" : ""} onMouseEnter={() => setActive(gear.id)} onMouseLeave={() => setActive(null)} onFocus={() => setActive(gear.id)} onBlur={() => setActive(null)} onClick={() => setSelected(selected === gear.id ? null : gear.id)} aria-pressed={active === gear.id}>

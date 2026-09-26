@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { CSSProperties, useState } from "react";
 
 const cues = [
   { name: "Color", symbol: "col", description: "Mean colors in CIELAB space: larger perceptual differences reduce affinity." },
@@ -22,7 +22,7 @@ export default function MergeEnergy() {
       <svg viewBox="0 0 160 68" aria-hidden="true">
         {i === 0 ? <><circle cx="59" cy="34" r="23" fill="var(--accent)" /><circle cx="101" cy="34" r="23" fill={`hsl(calc(var(--live-hue) + ${(1-factors[i])*170}) var(--live-chroma) var(--live-light))`} /></> : i === 1 ? <><ellipse cx="57" cy="34" rx="32" ry="15" fill="var(--method-neutral-fill)" /><path d="M26 34H88" stroke="var(--method-secondary)" strokeWidth="2" /><g transform={`rotate(${(1-factors[i])*85} 108 34)`}><ellipse cx="108" cy="34" rx="30" ry="15" fill="var(--method-fill)" /><path d="M78 34H138" stroke="var(--accent)" strokeWidth="2" /></g></> : i === 2 ? <><path d="M28 24H130" stroke="var(--method-secondary)" strokeWidth="3" /><path d={`M28 46H${40+factors[i]*90}`} stroke="var(--accent)" strokeWidth="3" /><circle cx="28" cy="24" r="4" fill="var(--method-secondary)" /><circle cx="28" cy="46" r="4" fill="var(--accent)" /></> : <><rect x="30" y="10" width="50" height="48" rx="8" fill="var(--method-neutral-fill)" /><rect x="80" y="10" width="50" height="48" rx="8" fill="var(--method-fill)" /><path d="M80 8V60" stroke="var(--ink)" strokeWidth={1+(1-factors[i])*5} strokeDasharray={factors[i]>.5 ? "3 4" : undefined} /></>}
       </svg>
-      <label><span>{cue.name}<output>{factors[i].toFixed(2)}</output></span><input aria-label={`${cue.name} affinity factor`} type="range" min=".05" max="1" step=".01" value={factors[i]} onChange={e => setFactors(previous => previous.map((f, index) => index === i ? Number(e.target.value) : f))} /></label><p>{cue.description}</p>
+      <label><span>{cue.name}<output>{factors[i].toFixed(2)}</output></span><input aria-label={`${cue.name} affinity factor`} type="range" min=".05" max="1" step=".01" value={factors[i]} style={{ "--fill": `${((factors[i] - 0.05) / 0.95) * 100}%` } as CSSProperties} onChange={e => setFactors(previous => previous.map((f, index) => index === i ? Number(e.target.value) : f))} /></label><p>{cue.description}</p>
     </div>)}</div>
     <div className="merge-bottom"><div className="merge-presets"><span>Try a pair</span>{["Compatible regions", "Strong boundary", "Different colors"].map((name, i) => <button type="button" key={name} aria-pressed={factors.every((factor, index) => factor === presets[i][index])} onClick={() => setFactors(presets[i])}>{name}</button>)}</div>
       <div className={`merge-result ${merge ? "accepted" : "rejected"}`} aria-live="polite"><svg viewBox="0 0 90 48" aria-hidden="true"><rect x="5" y="5" width={merge ? 80 : 37} height="38" rx="12" fill="var(--method-secondary)" />{!merge && <rect x="48" y="5" width="37" height="38" rx="12" fill="var(--accent)" />}</svg><div><strong>{merge ? "Merge the pair" : "Keep the boundary"}</strong><span>Cost {cost.toFixed(2)} {merge ? "<" : "≥"} 2.80 · Affinity {affinity.toFixed(3)}</span></div></div>
