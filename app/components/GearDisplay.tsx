@@ -1,6 +1,6 @@
 "use client";
 
-import { CSSProperties, useState } from "react";
+import { CSSProperties, useEffect, useState } from "react";
 import Image from "next/image";
 
 // Cutouts are generated at one shared scale, so a file's pixel width divided by
@@ -23,6 +23,15 @@ export default function GearDisplay() {
   const [hovered, setActive] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const active = hovered ?? selected;
+  // Phones fold the kit behind a single row (CSS ignores this on wider
+  // screens); a link to #gear unfolds it so the jump lands on something.
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const openFromHash = () => { if (window.location.hash === "#gear") setOpen(true); };
+    openFromHash();
+    window.addEventListener("hashchange", openFromHash);
+    return () => window.removeEventListener("hashchange", openFromHash);
+  }, []);
 
   // Every object is laid out from its true size, so the kit reads at the scale
   // it actually has: the body really is three lenses wide.
@@ -42,7 +51,11 @@ export default function GearDisplay() {
     </button>;
   };
 
-  return <div className="gear-section gear-display" id="gear">
+  return <div className={`gear-section gear-display ${open ? "gear-open" : ""}`} id="gear">
+    <button type="button" className="gear-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <span><small>Camera gear · 5 items</small><strong>What I shoot with</strong></span>
+      <span className="gear-toggle-sign" aria-hidden="true">{open ? "−" : "+"}</span>
+    </button>
     <div className="gear-list"><p className="eyebrow">Camera gear</p><h3>A small kit.<br /><em>Plenty to see.</em></h3>
       <div className="gear-items">{kit.map((gear, index) => <button key={gear.id} type="button" className={active === gear.id ? "is-active" : ""} onMouseEnter={() => setActive(gear.id)} onMouseLeave={() => setActive(null)} onFocus={() => setActive(gear.id)} onBlur={() => setActive(null)} onClick={() => setSelected(selected === gear.id ? null : gear.id)} aria-pressed={active === gear.id}>
         <span className="gear-number">0{index + 1}</span><span><small>{gear.category}</small><strong>{gear.name}</strong><span className="gear-detail">{gear.detail}</span></span><i aria-hidden="true" />

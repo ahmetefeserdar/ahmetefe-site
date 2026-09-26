@@ -244,24 +244,46 @@ function Arrow({ diagonal = false }: { diagonal?: boolean }) {
   return <span aria-hidden="true">{diagonal ? "↗" : "→"}</span>;
 }
 
+// Below this width the hero stacks, and an open colour lab would push the
+// journey a whole screen further down, so it starts folded there.
+const narrowQuery = "(max-width: 800px)";
+function subscribeToNarrow(onChange: () => void) {
+  const query = matchMedia(narrowQuery);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+const readNarrow = () => matchMedia(narrowQuery).matches;
+const serverNarrow = () => false;
+
+type Temperature = "warm" | "cool";
+
 function ColorLab({
   hue,
   chroma,
   light,
+  temperature,
   setHue,
   setChroma,
   setLight,
   setGamut,
+  setTemperature,
 }: {
   hue: number;
   chroma: number;
   light: number;
+  temperature: Temperature;
   setHue: (value: number) => void;
   setChroma: (value: number) => void;
   setLight: (value: number) => void;
   setGamut: (value: "P3" | "sRGB") => void;
+  setTemperature: (value: Temperature) => void;
 }) {
   const [mode, setMode] = useState<"Simple" | "P3" | "sRGB">("Simple");
+  const narrow = useSyncExternalStore(subscribeToNarrow, readNarrow, serverNarrow);
+  // null follows the screen size (CSS hides the body on narrow screens before
+  // hydration); a click turns it into the visitor's explicit choice.
+  const [expanded, setExpanded] = useState<boolean | null>(null);
+  const open = expanded ?? !narrow;
   const palettes = [
     { name: "Terracotta", hue: 12, chroma: 88 },
     { name: "Amber", hue: 36, chroma: 78 },
@@ -271,15 +293,16 @@ function ColorLab({
     { name: "Rose", hue: 338, chroma: 64 },
   ];
   return (
-    <details className="color-lab" open aria-label="Interactive color laboratory">
-      <summary className="lab-head">
-        <div>
-          <p className="eyebrow">Grade this page</p>
-          <p className="lab-status"><i /> Make it feel like you</p>
-        </div>
+    <div className={`color-lab ${expanded === null ? "lab-auto" : open ? "lab-open" : "lab-closed"}`} role="group" aria-label="Page colours">
+      <button type="button" className="lab-head" aria-expanded={open} aria-controls="color-lab-body" onClick={() => setExpanded(!open)}>
+        <span>
+          <span className="eyebrow">Grade this page</span>
+          <span className="lab-status"><i /> Make it feel like you</span>
+        </span>
         <span className="live-swatch" aria-hidden="true" />
-      </summary>
+      </button>
 
+      <div className="lab-body" id="color-lab-body">
       <div className="gamut-switch color-mode-switch" aria-label="Site color character">
         {(["Simple", "P3", "sRGB"] as const).map((item) => (
           <button
@@ -298,7 +321,7 @@ function ColorLab({
         <p>Pick an accent</p>
         <div className="palette-options" role="group" aria-label="Accent palette">{palettes.map(palette => <button key={palette.name} type="button" aria-pressed={hue === palette.hue && chroma === palette.chroma} onClick={() => { setHue(palette.hue); setChroma(palette.chroma); }}><span style={{ background: `hsl(${palette.hue} ${palette.chroma}% 58%)` }} aria-hidden="true" /><span>{palette.name}</span></button>)}</div>
         <label className="simple-brightness"><span>Page brightness</span><input aria-label="Page brightness" type="range" min="42" max="72" value={light} onChange={event => setLight(Number(event.target.value))} /><span aria-hidden="true">☀</span></label>
-        <button className="reset-palette" type="button" onClick={() => { setHue(12); setChroma(88); setLight(58); }}>Reset to original ↺</button>
+        <button className="reset-palette" type="button" onClick={() => { setHue(12); setChroma(88); setLight(58); setTemperature("warm"); }}>Reset to original ↺</button>
       </div> : <div className="lab-controls">
         <label>
           <span><b>Accent hue</b><em>{hue}°</em></span>
@@ -314,8 +337,20 @@ function ColorLab({
         </label>
       </div>}
 
+      <div className="lab-tone">
+        <span id="page-tone-label">Page tone</span>
+        <div className="tone-switch" role="group" aria-labelledby="page-tone-label">
+          {(["warm", "cool"] as const).map((tone) => (
+            <button key={tone} type="button" aria-pressed={temperature === tone} onClick={() => setTemperature(tone)} title={tone === "warm" ? "Warm paper · 3200K" : "Cool paper · 5600K"}>
+              {tone === "warm" ? "Warm" : "Cool"}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <p className="lab-readout">{mode === "Simple" ? "Your palette, across the page. Photos stay original." : <>H {hue}° · C {chroma} · {light > 58 ? "+" : ""}{((light - 58) / 10).toFixed(1)} EV</>}</p>
-    </details>
+      </div>
+    </div>
   );
 }
 
@@ -351,7 +386,7 @@ function Lightbox({ photo, neighbours, onClose, onNavigate, position, total }: {
     <div ref={dialogRef} className="lightbox" role="dialog" aria-modal="true" aria-label={`Photograph ${position} of ${total}`} onClick={onClose}>
       <button ref={closeRef} type="button" onClick={onClose} aria-label="Close photograph">Close ×</button>
       <div className="lightbox-frame" onClick={(event) => event.stopPropagation()}>
-        <div className="lightbox-image" onTouchStart={event => { touchStart.current = {x:event.touches[0].clientX,y:event.touches[0].clientY}; }} onTouchEnd={event => { const start=touchStart.current; touchStart.current=null; if (!start) return; const dx=event.changedTouches[0].clientX-start.x,dy=event.changedTouches[0].clientY-start.y; if(Math.abs(dx)>60 && Math.abs(dx)>Math.abs(dy)*1.5) onNavigate(dx<0?1:-1); }} onContextMenu={(event) => event.preventDefault()}>
+        <div className="lightbox-image" onTouchStart={event => { touchStart.current = {x:event.touches[0].clientX,y:event.touches[0].clientY}; }} onTouchEnd={event => { const start=touchStart.current; touchStart.current=null; if (!start) return; const dx=event.changedTouches[0].clientX-start.x,dy=event.changedTouches[0].clientY-start.y; if(Math.abs(dx)>60 && Math.abs(dx)>Math.abs(dy)*1.5) onNavigate(dx<0?1:-1); }}>
           <div className="lightbox-media" style={{ "--media-ratio": photo.width / photo.height } as CSSProperties}>
             <Image src={photo.fullSrc ?? photo.src} alt={photo.alt} width={photo.width} height={photo.height} sizes="75vw" loading="eager" unoptimized draggable={false} />
             {neighbours.map(neighbour => <link key={neighbour} rel="preload" as="image" href={neighbour} />)}
@@ -400,7 +435,31 @@ export default function Portfolio() {
   const [chroma, setChroma] = useState(88);
   const [light, setLight] = useState(58);
   const [gamut, setGamut] = useState<"P3" | "sRGB">("P3");
-  const [temperature, setTemperature] = useState<"warm" | "cool">("warm");
+  const [temperature, setTemperature] = useState<Temperature>("warm");
+  const [emailCopied, setEmailCopied] = useState(false);
+  const copyEmail = async () => {
+    const address = "hello@ahmetefe.dev";
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(address);
+      copied = true;
+    } catch {
+      // Older browsers and unfocused or embedded frames refuse the async
+      // clipboard, so fall back to copying a selection.
+      const field = document.createElement("textarea");
+      field.value = address;
+      field.setAttribute("readonly", "");
+      field.style.position = "fixed";
+      field.style.opacity = "0";
+      document.body.appendChild(field);
+      field.select();
+      try { copied = document.execCommand("copy"); } catch {}
+      field.remove();
+    }
+    if (!copied) return;
+    setEmailCopied(true);
+    setTimeout(() => setEmailCopied(false), 2000);
+  };
   const [gallery, setGallery] = useState<"editorial" | "contact-sheet">("editorial");
   const [photoCollection, setPhotoCollection] = useState("All frames");
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
@@ -524,10 +583,7 @@ export default function Portfolio() {
           </div>
           <a href="#contact" data-primary aria-current={activeSection === "contact" ? "location" : undefined}>Contact</a>
         </nav>
-        <div className="header-contacts"><button className="kelvin-toggle" type="button" onClick={() => setTemperature(temperature === "warm" ? "cool" : "warm")} aria-label={`Page white balance is ${temperature === "warm" ? "3200 Kelvin, warm" : "5600 Kelvin, cool"}. Switch to ${temperature === "warm" ? "cool" : "warm"}.`} title={temperature === "warm" ? "Warm page · 3200K" : "Cool page · 5600K"}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><path d="M12 4a8 8 0 0 1 0 16Z" fill="currentColor" stroke="none" /></svg>
-          <span>{temperature === "warm" ? "3200K" : "5600K"}</span>
-        </button><button className="theme-toggle" type="button" onClick={toggleTheme} aria-label="Dark mode" aria-pressed={isDark} title={isDark ? "Switch to light mode" : "Switch to dark mode"}>
+        <div className="header-contacts"><button className="theme-toggle" type="button" onClick={toggleTheme} aria-label="Dark mode" aria-pressed={isDark} title={isDark ? "Switch to light mode" : "Switch to dark mode"}>
           <svg className="theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" /></svg>
           <svg className="theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14A8.5 8.5 0 0 1 10 3.5 8.5 8.5 0 1 0 20.5 14Z" /></svg>
         </button><div className="social-links" aria-label="Social profiles">
@@ -578,10 +634,12 @@ export default function Portfolio() {
               hue={hue}
               chroma={chroma}
               light={light}
+              temperature={temperature}
               setHue={setHue}
               setChroma={setChroma}
               setLight={setLight}
               setGamut={setGamut}
+              setTemperature={setTemperature}
             />
             <dl className="profile-facts">
 
@@ -710,10 +768,10 @@ export default function Portfolio() {
 
           <div className={`photo-grid ${gallery}`} id="portfolio">
             {displayedPhotos.map((photo) => (
-              <button className="photo-card" type="button" key={photo.id} onClick={() => setSelectedPhoto(photo)} onContextMenu={(event) => event.preventDefault()} aria-label={`Open frame ${photo.id}: ${photo.alt}`}>
+              <button className="photo-card" type="button" key={photo.id} onClick={() => setSelectedPhoto(photo)} aria-label={`Open frame ${photo.id}: ${photo.alt}`}>
                 <span>{String(photo.id).padStart(2, "0")}</span>
                 <Image src={photo.src} alt={photo.alt} width={photo.width} height={photo.height} sizes={gallery === "contact-sheet" ? "(max-width: 700px) 50vw, 25vw" : "(max-width: 700px) 100vw, 40vw"} loader={frameLoader} loading="lazy" draggable={false} />
-                <small className="photo-place">{photo.location} · {photo.captured}</small>
+                <small className="photo-place">{photo.location}<span className="photo-date"> · {photo.captured}</span></small>
                 <small className="photo-exif"><b>{photo.focalLength}</b><b>{photo.aperture}</b><b>{photo.shutter}s</b><b>ISO {photo.iso}</b></small>
                 <small className="view-frame">View frame ↗</small>
               </button>
@@ -730,6 +788,11 @@ export default function Portfolio() {
           <div className="contact-copy">
             <p>Have a problem worth looking at twice?</p>
             <a href="mailto:hello@ahmetefe.dev">Let&apos;s talk.<Arrow diagonal /></a>
+            <div className="contact-email">
+              <a href="mailto:hello@ahmetefe.dev">hello@ahmetefe.dev</a>
+              <button type="button" onClick={copyEmail}>{emailCopied ? "Copied ✓" : "Copy"}</button>
+              <span className="sr-only" role="status">{emailCopied ? "Email address copied" : ""}</span>
+            </div>
           </div>
           <div className="contact-meta">
             <a href="https://github.com/ahmetefeserdar" target="_blank" rel="noreferrer">GitHub <Arrow diagonal /></a>
@@ -740,7 +803,8 @@ export default function Portfolio() {
       </main>
 
       <footer>
-        <span>© 2026 Ahmet Efe Serdar</span>
+        {/* The static HTML carries the build year; the client corrects it after a new year starts. */}
+        <span suppressHydrationWarning>© {new Date().getFullYear()} Ahmet Efe Serdar</span>
         <span>Graphics, systems &amp; photography</span>
         <a href="#profile">Back to top ↑</a>
       </footer>
