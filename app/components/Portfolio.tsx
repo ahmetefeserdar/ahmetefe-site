@@ -508,7 +508,7 @@ export default function Portfolio() {
       <a className="skip-link" href="#main-content">Skip to content</a>
       <header className="topbar">
         <a className="wordmark" href="#profile" aria-label="Ahmet Efe Serdar, home">
-          <Image className="wordmark-mark" src="/brand-mark-camera-illustrated.png" alt="" width={76} height={43} loading="eager" unoptimized aria-hidden="true" />
+          <Image className="wordmark-mark" src="/brand-mark.webp" alt="" width={76} height={43} loading="eager" unoptimized aria-hidden="true" />
           <span className="wordmark-name"><b>Ahmet Efe</b> <em>Serdar</em></span>
         </a>
         <nav aria-label="Primary navigation" ref={navRef}>
@@ -563,8 +563,7 @@ export default function Portfolio() {
           <div className="hero-kicker"><span>01 / Profile</span><span>Computer graphics · vision · AI</span></div>
           <div className="hero-copy">
             <div className="identity-block">
-              <p className="identity-label">Ahmet Efe</p>
-              <h1><span>Ahmet Efe</span><em>Serdar.</em></h1>
+              <h1><span>Ahmet Efe</span>{" "}<em>Serdar.</em></h1>
               <p className="profile-lede">Building systems.<br />Thinking in images.</p>
             </div>
             <div className="hero-bottom profile-statement">
@@ -657,7 +656,7 @@ export default function Portfolio() {
               <div><span>03 / Result</span><h3>Regions ready for thread.</h3><p>Export layered polygons and direction hints for the next stage of the embroidery pipeline.</p></div>
             </div>
             <div className="stitch-stage" aria-label="From an input image to segmented regions and an embroidery preview">
-              <Image className="stitch-image" src="/thesis/teaser.png" alt="A bird transformed from a flat image through superpixel segmentation into a direction-aware embroidered rendering" width={2798} height={840} sizes="94vw" loading="lazy" unoptimized />
+              <Image className="stitch-image" src="/thesis/teaser.webp" alt="A bird transformed from a flat image through superpixel segmentation into a direction-aware embroidered rendering" width={2400} height={721} sizes="94vw" loading="lazy" unoptimized />
             </div>
             <div className="stitch-labels" aria-hidden="true"><span>01 · Source image</span><span>02 · Segmented regions</span><span>03 · Embroidery preview</span></div>
             <div className="thesis-copy thesis-copy-grid">

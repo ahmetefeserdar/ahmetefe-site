@@ -19,7 +19,8 @@ Deploy that directory; `next start` is not supported by this static-export setup
 - `public/`: assets used by the live website, including generated gallery and gear images.
 - `assets/photography/`: original photo masters, excluded from the deployed site.
 - `assets/gear/`: original product photos and source attribution.
-- `assets/thesis/`: supporting thesis images retained for future edits.
+- `assets/thesis/`: supporting thesis images and the full-size teaser master.
+- `assets/brand/`: full-size logo mark and social preview masters; `public/` holds the compressed copies.
 - `scripts/`: image preparation tools.
 - `design-archive/`: deliberate design snapshots and retired experiments for rollback.
 - `.next/`, `out/`, `node_modules/`: generated, ignored directories.
